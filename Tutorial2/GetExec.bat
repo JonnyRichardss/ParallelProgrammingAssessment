@@ -1,0 +1,1 @@
+copy /y ..\x64\Debug\Tutorial2.exe Tutorial2.exe

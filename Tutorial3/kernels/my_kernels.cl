@@ -122,7 +122,10 @@ kernel void scan_hs(global int* A, global int* B) {
 		C = A; A = B; B = C; //swap A & B between steps
 	}
 }
-
+kernel void output_gid(global int* A, global int* B) {
+	int gid = get_global_id(0);
+	B[gid] = gid;
+}
 //a double-buffered version of the Hillis-Steele inclusive scan
 //requires two additional input arguments which correspond to two local buffers
 kernel void scan_add(__global const int* A, global int* B, local int* scratch_1, local int* scratch_2) {

@@ -58,23 +58,25 @@ int main(int argc, char **argv) {
 
 		//Part 3 - memory allocation
 		//host - input
-		std::vector<mytype> A(10, 1);//allocate 10 elements with an initial value 1 - their sum is 10 so it should be easy to check the results!
+		std::vector<mytype> A(256, 1);//allocate 10 elements with an initial value 1 - their sum is 10 so it should be easy to check the results!
 
 		//the following part adjusts the length of the input vector so it can be run for a specific workgroup size
 		//if the total input length is divisible by the workgroup size
 		//this makes the code more efficient
-		size_t local_size = 10;
+		size_t local_size = 16;
 
 		size_t padding_size = A.size() % local_size;
 
 		//if the input vector is not a multiple of the local_size
 		//insert additional neutral elements (0 for addition) so that the total will not be affected
+		
 		if (padding_size) {
 			//create an extra vector with neutral values
 			std::vector<int> A_ext(local_size-padding_size, 0);
 			//append that extra vector to our input
 			A.insert(A.end(), A_ext.begin(), A_ext.end());
 		}
+		
 
 		size_t input_elements = A.size();//number of input elements
 		size_t input_size = A.size()*sizeof(mytype);//size in bytes
@@ -85,7 +87,7 @@ int main(int argc, char **argv) {
 		size_t output_size = B.size()*sizeof(mytype);//size in bytes
 
 		//device - buffers
-		cl::Buffer buffer_A(context, CL_MEM_READ_ONLY, input_size);
+		cl::Buffer buffer_A(context, CL_MEM_READ_WRITE, input_size);
 		cl::Buffer buffer_B(context, CL_MEM_READ_WRITE, output_size);
 
 		//Part 4 - device operations
@@ -93,21 +95,31 @@ int main(int argc, char **argv) {
 		//4.1 copy array A to and initialise other arrays on device memory
 		queue.enqueueWriteBuffer(buffer_A, CL_TRUE, 0, input_size, &A[0]);
 		queue.enqueueFillBuffer(buffer_B, 0, 0, output_size);//zero B buffer on device memory
-
+		
 		//4.2 Setup and execute all kernels (i.e. device code)
-		cl::Kernel kernel_1 = cl::Kernel(program, "reduce_add_1");
+		cl::Kernel kernel_1 = cl::Kernel(program, "scan_hs");
 		kernel_1.setArg(0, buffer_A);
 		kernel_1.setArg(1, buffer_B);
 //		kernel_1.setArg(2, cl::Local(local_size*sizeof(mytype)));//local memory size
 
 		//call all kernels in a sequence
-		queue.enqueueNDRangeKernel(kernel_1, cl::NullRange, cl::NDRange(input_elements), cl::NDRange(local_size));
+		queue.enqueueNDRangeKernel(kernel_1, cl::NullRange, cl::NDRange(input_elements), cl::NDRange(64));
 
 		//4.3 Copy the result from device to host
+		//std::cout << "A = " << A << std::endl;
+		//queue.enqueueReadBuffer(buffer_A, CL_TRUE, 0, output_size, &A[0]);
 		queue.enqueueReadBuffer(buffer_B, CL_TRUE, 0, output_size, &B[0]);
 
-		std::cout << "A = " << A << std::endl;
-		std::cout << "B = " << B << std::endl;
+		//std::cout << "A = " << A << std::endl;
+		mytype last = 0;
+		for (int i = 0; i < 256; i++) {
+			if (B[i] < last) {
+				std::cout << std::endl << "FOUND FUCKY WUCKY AT INDEX " << i << std::endl;
+			}
+			last = B[i];
+			std::cout << B[i] << " ";
+		}
+		//std::cout << "B = " << B << std::endl;
 	}
 	catch (cl::Error err) {
 		std::cerr << "ERROR: " << err.what() << ", " << getErrorString(err.err()) << std::endl;

@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
 		//Part 2 - host operations
 		//2.1 Select computing devices
 		cl::Context context = GetContext(platform_id, device_id);
-		std::cout << "Runinng on " << GetPlatformName(platform_id) << ", " << GetDeviceName(platform_id, device_id) << std::endl;
+		std::cout << "Running on " << GetPlatformName(platform_id) << ", " << GetDeviceName(platform_id, device_id) << std::endl;
 
 		cl::CommandQueue queue(context, CL_QUEUE_PROFILING_ENABLE);
 
@@ -41,7 +41,7 @@ int main(int argc, char **argv) {
 		cl::Program::Sources sources;
 		AddSources(sources, "kernels/my_kernels.cl");
 		cl::Program program(context, sources);
-
+		
 		//build and debug the kernel code
 		try {
 			program.build();
@@ -53,71 +53,104 @@ int main(int argc, char **argv) {
 			std::cout << "Build Log:\t " << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(context.getInfo<CL_CONTEXT_DEVICES>()[0]) << std::endl;
 			//throw err;
 		}
-		constexpr int NUM_EXECS = 5;
-		constexpr int NUM_COPIES = NUM_EXECS * 3;
-		constexpr int ARR_SIZE = 500000000;
+		constexpr int NUM_EXECS = 1;
+		constexpr int NUM_COPIES = NUM_EXECS * 6;
+		constexpr int ARR_SIZE = 128;
 		std::cout << "Running " << NUM_EXECS << " times with " << ARR_SIZE << " elements.\n\n" << std::endl;
-		std::vector<cl_ulong> execTimes;
+		std::vector<cl_ulong> addTimes;
+		std::vector<cl_ulong> multTimes;
 		std::vector<cl_ulong> copyTimes;
-		execTimes.reserve(NUM_EXECS);
+		addTimes.reserve(NUM_EXECS);
+		multTimes.reserve(NUM_EXECS);
 		copyTimes.reserve(NUM_COPIES);
 		for (int i = 0; i < NUM_EXECS; i++) {
 			//Part 3 - memory allocation
 			//host - input
 			 
 			//Small size vectors with custom values
-			//std::vector<int> A = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 }; //C++11 allows this type of initialisation
+			//std::vector<int> A = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
 			//std::vector<int> B = { 0, 1, 2, 0, 1, 2, 0, 1, 2, 0 };
 			//Large size vectors zero initialized
-			std::vector<int> A(ARR_SIZE);
-			std::vector<int> B(ARR_SIZE);
+			std::vector<int> A(ARR_SIZE,2);
+			std::vector<int> B(ARR_SIZE,2);
 
 			size_t vector_elements = A.size();//number of elements
 			size_t vector_size = A.size() * sizeof(int);//size in bytes
 
 			//host - output
 			std::vector<int> C(vector_elements);
+			std::vector<int> C1(vector_elements);
 
 			//device - buffers
 			cl::Buffer buffer_A(context, CL_MEM_READ_WRITE, vector_size);
 			cl::Buffer buffer_B(context, CL_MEM_READ_WRITE, vector_size);
 			cl::Buffer buffer_C(context, CL_MEM_READ_WRITE, vector_size);
+			cl::Buffer buffer_A1(context, CL_MEM_READ_WRITE, vector_size);
+			cl::Buffer buffer_B1(context, CL_MEM_READ_WRITE, vector_size);
+			cl::Buffer buffer_C1(context, CL_MEM_READ_WRITE, vector_size);
 
 			//Part 4 - device operations
 			cl::Event AEvent;
 			cl::Event BEvent;
 			cl::Event CEvent;
-			cl::Event ExecEvent;
+			cl::Event A1Event;
+			cl::Event B1Event;
+			cl::Event C1Event;
+			cl::Event AddEvent;
+			cl::Event MultEvent;
 
 			//4.1 Copy arrays A and B to device memory
-			queue.enqueueWriteBuffer(buffer_A, CL_TRUE, 0, vector_size, &A[0],nullptr, &AEvent);
+			queue.enqueueFillBuffer<int>(buffer_A, 0, 0, vector_size);
+			//queue.enqueueWriteBuffer(buffer_A, CL_TRUE, 0, vector_size, &A[0],nullptr, &AEvent);
 			copyTimes.push_back(AEvent.getProfilingInfo<CL_PROFILING_COMMAND_END>() - AEvent.getProfilingInfo<CL_PROFILING_COMMAND_START>());
 			queue.enqueueWriteBuffer(buffer_B, CL_TRUE, 0, vector_size, &B[0],nullptr, &BEvent);
 			copyTimes.push_back(BEvent.getProfilingInfo<CL_PROFILING_COMMAND_END>() - BEvent.getProfilingInfo<CL_PROFILING_COMMAND_START>());
+			queue.enqueueWriteBuffer(buffer_A1, CL_TRUE, 0, vector_size, &A[0],nullptr, &A1Event);
+			copyTimes.push_back(A1Event.getProfilingInfo<CL_PROFILING_COMMAND_END>() - A1Event.getProfilingInfo<CL_PROFILING_COMMAND_START>());
+			queue.enqueueWriteBuffer(buffer_B1, CL_TRUE, 0, vector_size, &B[0],nullptr, &B1Event);
+			copyTimes.push_back(B1Event.getProfilingInfo<CL_PROFILING_COMMAND_END>() - B1Event.getProfilingInfo<CL_PROFILING_COMMAND_START>());
 			//4.2 Setup and execute the kernel (i.e. device code)
 			cl::Kernel kernel_add = cl::Kernel(program, "add");
 			kernel_add.setArg(0, buffer_A);
 			kernel_add.setArg(1, buffer_B);
 			kernel_add.setArg(2, buffer_C);
 
-			queue.enqueueNDRangeKernel(kernel_add, cl::NullRange, cl::NDRange(vector_elements), cl::NullRange, nullptr, &ExecEvent);
+			cl::Kernel kernel_mult = cl::Kernel(program, "mult");
+			kernel_mult.setArg(0, buffer_A1);
+			kernel_mult.setArg(1, buffer_B1);
+			kernel_mult.setArg(2, buffer_C1);
+
+			cl::Device device = context.getInfo<CL_CONTEXT_DEVICES>()[0]; // get device
+			cout << "PREFFERED GROUP SIZE  " << kernel_add.getWorkGroupInfo<CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE>(device) << "\n";
+			queue.enqueueNDRangeKernel(kernel_add, cl::NullRange, cl::NDRange(vector_elements), cl::NDRange(32), nullptr, &AddEvent);
+			//queue.enqueueNDRangeKernel(kernel_mult, cl::NullRange, cl::NDRange(vector_elements), cl::NullRange, nullptr, &MultEvent);
 			//4.3 Copy the result from device to host
 			queue.enqueueReadBuffer(buffer_C, CL_TRUE, 0, vector_size, &C[0],nullptr, &CEvent);
+			//queue.enqueueReadBuffer(buffer_C1, CL_TRUE, 0, vector_size, &C1[0],nullptr, &C1Event);
 			copyTimes.push_back(CEvent.getProfilingInfo<CL_PROFILING_COMMAND_END>() - CEvent.getProfilingInfo<CL_PROFILING_COMMAND_START>());
-			execTimes.push_back(ExecEvent.getProfilingInfo<CL_PROFILING_COMMAND_END>() - ExecEvent.getProfilingInfo<CL_PROFILING_COMMAND_START>());
+			//copyTimes.push_back(C1Event.getProfilingInfo<CL_PROFILING_COMMAND_END>() - C1Event.getProfilingInfo<CL_PROFILING_COMMAND_START>());
+			addTimes.push_back(AddEvent.getProfilingInfo<CL_PROFILING_COMMAND_END>() - AddEvent.getProfilingInfo<CL_PROFILING_COMMAND_START>());
+			//multTimes.push_back(MultEvent.getProfilingInfo<CL_PROFILING_COMMAND_END>() - MultEvent.getProfilingInfo<CL_PROFILING_COMMAND_START>());
 		}
-		cl_ulong totalExecTime = 0;
+		cl_ulong totalAddTime = 0;
+		cl_ulong totalMultTime = 0;
 		cl_ulong totalCopyTime = 0;
-		for (cl_ulong time : execTimes) {
-			totalExecTime += time;
-		}for (cl_ulong time : copyTimes) {
+		for (cl_ulong time : addTimes) {
+			totalAddTime += time;
+		}
+		for (cl_ulong time : multTimes) {
+			totalMultTime += time;
+		}
+		for (cl_ulong time : copyTimes) {
 			totalCopyTime += time;
 		}
-		totalExecTime /= NUM_EXECS;
+		totalAddTime /= NUM_EXECS;
+		totalMultTime /= NUM_EXECS;
 		totalCopyTime /= NUM_COPIES;
-		std::cout <<  "Average time over " << NUM_EXECS << " runs [ns]: " << totalExecTime << std::endl;
+		std::cout <<  "Average time over " << NUM_EXECS << " additions [ns]: " << totalAddTime << std::endl;
+		//std::cout <<  "Average time over " << NUM_EXECS << " multiplications [ns]: " << totalMultTime << std::endl;
 		std::cout <<  "Average time over " << NUM_COPIES << " copies [ns]: " << totalCopyTime << std::endl;
-		std::cout <<  "Total average [ns]: " << totalExecTime + totalCopyTime << std::endl;
+		std::cout <<  "Total average [ns]: " << totalAddTime + totalCopyTime << std::endl;
 	}
 	//catch (cl::Error err) {
 	catch (...) {

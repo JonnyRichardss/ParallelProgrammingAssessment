@@ -2,6 +2,12 @@
 kernel void add(global const int* A, global const int* B, global int* C) {
 	int id = get_global_id(0);
 	C[id] = A[id] + B[id];
+	printf("Item ID = %d\n", id);
+	printf("local ID = %d\n", get_local_id(0));
+}
+kernel void mult(global const int* A, global const int* B, global int* C) {
+	int id = get_global_id(0);
+	C[id] = A[id] * B[id];
 }
 
 //a simple smoothing kernel averaging values in a local window (radius 1)
