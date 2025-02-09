@@ -100,17 +100,17 @@ int main(int argc, char **argv) {
 			kernel_add.setArg(1, buffer_B);
 			kernel_add.setArg(2, buffer_C);
 
-			queue.enqueueNDRangeKernel(kernel_add, cl::NullRange, cl::NDRange(vector_elements), cl::NullRange, nullptr, &CEvent);
-			copyTimes.push_back(CEvent.getProfilingInfo<CL_PROFILING_COMMAND_END>() - CEvent.getProfilingInfo<CL_PROFILING_COMMAND_START>());
+			queue.enqueueNDRangeKernel(kernel_add, cl::NullRange, cl::NDRange(vector_elements), cl::NullRange, nullptr, &ExecEvent);
 			//4.3 Copy the result from device to host
-			queue.enqueueReadBuffer(buffer_C, CL_TRUE, 0, vector_size, &C[0],nullptr, &ExecEvent);
+			queue.enqueueReadBuffer(buffer_C, CL_TRUE, 0, vector_size, &C[0],nullptr, &CEvent);
+			copyTimes.push_back(CEvent.getProfilingInfo<CL_PROFILING_COMMAND_END>() - CEvent.getProfilingInfo<CL_PROFILING_COMMAND_START>());
 			execTimes.push_back(ExecEvent.getProfilingInfo<CL_PROFILING_COMMAND_END>() - ExecEvent.getProfilingInfo<CL_PROFILING_COMMAND_START>());
 		}
 		cl_ulong totalExecTime = 0;
 		cl_ulong totalCopyTime = 0;
 		for (cl_ulong time : execTimes) {
 			totalExecTime += time;
-		}for (cl_ulong time : execTimes) {
+		}for (cl_ulong time : copyTimes) {
 			totalCopyTime += time;
 		}
 		totalExecTime /= NUM_EXECS;
