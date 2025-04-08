@@ -1,5 +1,6 @@
 #pragma once
 #include "ImageProcessorKernel.h"
+#include <chrono>
 //These exist to allow me to feed in the desired image data type to the CL compiler
 template<typename T>
 std::string GetCLTypename()
@@ -31,7 +32,8 @@ public:
 		profilingEnabled(useProfiling),
 		num_bins(_num_bins),
 		ignoreColour(_ignoreColour),
-		displayHistograms(_displayHistograms)
+		displayHistograms(_displayHistograms),
+		inputPath(image_filename)
 	{
 		//load images
 		inputImage = CImg::CImg<CIMG_TYPE>(image_filename.c_str());
@@ -76,11 +78,17 @@ public:
 	void RunAll() {
 		if (allKernels.size() == 0) {
 			std::cerr << "No kernels added to image processor!" << std::endl;
+			return;
 		}
+		std::chrono::time_point start = std::chrono::high_resolution_clock::now();
 		for (ImageProcessorKernel<CIMG_TYPE>* kernel : allKernels) {
-			std::cout << "Now Running kernel: " << kernel->GetName() << "!" << std::endl;
+			std::cout << "\nNow Running kernel: " << kernel->GetName() << "!" << std::endl;
 			kernel->Run(profilingEnabled);
 		}
+		std::chrono::time_point end = std::chrono::high_resolution_clock::now();
+		if (!profilingEnabled) return;
+		std::cout << "\nTotal execution time for all kernels [ns]: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count() << std::endl;
+
 	}
 	void DisplayImages() {
 		CImg::CImgDisplay disp_input(inputImage, "Input");
@@ -91,8 +99,10 @@ public:
 			disp_input.wait(1);
 			disp_output.wait(1);
 		}
+		outputImage.save(("equalized_" + inputPath).c_str());
 	}
 protected:
+	std::string inputPath;
 	bool profilingEnabled;
 	bool displayHistograms;
 	bool ignoreColour;
